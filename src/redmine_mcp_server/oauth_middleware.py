@@ -106,11 +106,11 @@ class DynamicApiKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Extract API key from header
         api_key = request.headers.get("X-Redmine-API-Key")
-        
+
         # Also support query parameter for easier testing
         if not api_key:
             api_key = request.query_params.get("api_key")
-        
+
         if api_key:
             # Set in context for this request
             api_key_var = current_api_key.set(api_key)
