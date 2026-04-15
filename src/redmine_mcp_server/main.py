@@ -27,7 +27,10 @@ logging.basicConfig(
 )
 
 from .redmine_handler import mcp  # noqa: E402
-from .oauth_middleware import RedmineOAuthMiddleware, DynamicApiKeyMiddleware  # noqa: E402
+from .oauth_middleware import (  # noqa: E402
+    RedmineOAuthMiddleware,
+    DynamicApiKeyMiddleware,
+)
 
 logger = logging.getLogger(__name__)
 
