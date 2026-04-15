@@ -46,10 +46,29 @@ curl -H "X-Redmine-API-Key: TU_API_KEY" \
 curl "http://redmine-mcp-34-52-227-235.nip.io/tools?api_key=TU_API_KEY"
 ```
 
+## Tests Realizados ✅
+
+### 1. API Key Funcionando
+- **API Key testeada**: `65487679e7363a0d06605c9fec28430f2fc43884`
+- **Middleware**: Correctamente extrae `X-Redmine-API-Key` header y `api_key` query param
+- **Handler**: Prioriza API key dinámica sobre legacy client
+
+### 2. Endpoints Verificados
+```bash
+# Health endpoint (sin auth)
+GET http://localhost:8000/health
+Response: {"status":"ok","service":"redmine_mcp_tools","auth_mode":"legacy"}
+
+# MCP endpoint (con API key)
+POST http://localhost:8000/mcp
+Headers: X-Redmine-API-Key: 65487679e7363a0d06605c9fec28430f2fc43884
+Response: MCP protocol responses working
+```
+
 ## Issues Pendientes
 
-1. **Firewall HTTP/HTTPS**: Las reglas están creadas pero parece haber problemas de acceso desde fuera
-2. **Healthcheck**: El contenedor está marcado como "unhealthy" porque el healthcheck necesita una API key válida
+1. **Firewall HTTP/HTTPS**: Las reglas están creadas pero el acceso desde fuera está bloqueado (las reglas deny-all tienen prioridad)
+2. **Healthcheck**: El contenedor está marcado como "unhealthy" porque el healthcheck por defecto no incluye API key
 
 ## Repositorio
 - **Fork**: https://github.com/jdsanchezlda/redmine-mcp-server
