@@ -98,7 +98,7 @@ def get_current_token() -> str:
 
 class DynamicApiKeyMiddleware(BaseHTTPMiddleware):
     """Middleware to extract X-Redmine-API-Key header and set it in context.
-    
+
     This allows each request to use a different Redmine API key,
     enabling multi-user support with different permissions.
     """
