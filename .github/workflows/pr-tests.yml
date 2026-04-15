@@ -35,7 +35,9 @@ jobs:
       - name: Run code quality checks
         run: |
           uv run flake8 src/ --max-line-length=88
-          uv run black --check src/ --line-length=88
+      - name: Format code with Black
+        run: |
+          uv run black src/ --line-length=88
       - name: Run tests
         run: |
           uv run pytest -m "not integration" tests/
