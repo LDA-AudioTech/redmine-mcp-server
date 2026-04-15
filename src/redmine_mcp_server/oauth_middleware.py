@@ -102,7 +102,7 @@ class DynamicApiKeyMiddleware(BaseHTTPMiddleware):
     This allows each request to use a different Redmine API key,
     enabling multi-user support with different permissions.
     """
-    
+
     async def dispatch(self, request: Request, call_next):
         # Extract API key from header
         api_key = request.headers.get("X-Redmine-API-Key")
