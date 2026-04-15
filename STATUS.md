@@ -70,10 +70,62 @@ Response: MCP protocol responses working
 1. **Firewall HTTP/HTTPS**: Las reglas están creadas pero el acceso desde fuera está bloqueado (las reglas deny-all tienen prioridad)
 2. **Healthcheck**: El contenedor está marcado como "unhealthy" porque el healthcheck por defecto no incluye API key
 
+## Configuración para ChatGPT / Claude / OpenCode
+
+### URL del MCP Server
+
+**⚠️ IMPORTANTE: El acceso externo está bloqueado por firewall**
+
+Actualmente el servidor solo es accesible desde dentro de la VM. Para usarlo desde ChatGPT u otros clientes externos, necesitás:
+
+1. **Opción A - Arreglar firewall** (recomendado):
+   ```bash
+   # En GCP Console, aumentar prioridad de reglas allow-home-http/https
+   # Prioridad actual: 900 (demasiado alta, los deny-all tienen 1000)
+   # Cambiar a: 800 o menor
+   ```
+
+2. **Opción B - Usar túnel SSH**:
+   ```bash
+   # Desde tu máquina local
+   ssh -L 8080:localhost:8000 redmine_mcp@34.52.227.235
+   # Luego usar: http://localhost:8080/mcp
+   ```
+
+### URL para Configurar
+
+Una vez solucionado el acceso:
+
+```
+# URL base del MCP Server
+http://redmine-mcp-34-52-227-235.nip.io/mcp
+
+# Headers requeridos:
+X-Redmine-API-Key: 65487679e7363a0d06605c9fec28430f2fc43884
+Content-Type: application/json
+Accept: application/json, text/event-stream
+```
+
+### Ejemplo de Configuración en ChatGPT
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "url": "http://redmine-mcp-34-52-227-235.nip.io/mcp",
+      "headers": {
+        "X-Redmine-API-Key": "65487679e7363a0d06605c9fec28430f2fc43884"
+      }
+    }
+  }
+}
+```
+
 ## Repositorio
 - **Fork**: https://github.com/jdsanchezlda/redmine-mcp-server
 - **Branch**: develop
 - **Package**: https://github.com/jdsanchezlda/redmine-mcp-server/pkgs/container/redmine-mcp-server
+- **Tests**: ✅ Todos pasando (CI/CD funcionando)
 
 ## Comandos Útiles
 
