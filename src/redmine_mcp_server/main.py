@@ -27,7 +27,7 @@ logging.basicConfig(
 )
 
 from .redmine_handler import mcp  # noqa: E402
-from .oauth_middleware import RedmineOAuthMiddleware  # noqa: E402
+from .oauth_middleware import RedmineOAuthMiddleware, DynamicApiKeyMiddleware  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +180,6 @@ def register_oauth_routes(target_app):
 app = mcp.http_app(stateless_http=True)
 
 # Register Dynamic API Key middleware (always enabled for multi-user support)
-from .oauth_middleware import DynamicApiKeyMiddleware  # noqa: E402
 app.add_middleware(DynamicApiKeyMiddleware)
 
 # Register OAuth2 middleware and endpoints only when auth mode is oauth
