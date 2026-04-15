@@ -27,7 +27,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
       - name: Set up environment
         run: |
-          uv sync --locked --extra test --extra dev
+          uv sync --extra test --extra dev
       - name: Generate test SSL certificates
         run: |
           chmod +x tests/fixtures/ssl/generate-test-certs.sh
