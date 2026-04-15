@@ -65,45 +65,52 @@ Headers: X-Redmine-API-Key: 65487679e7363a0d06605c9fec28430f2fc43884
 Response: MCP protocol responses working
 ```
 
-## Issues Pendientes
+## Issues Resueltos ✅
 
-1. **Firewall HTTP/HTTPS**: Las reglas están creadas pero el acceso desde fuera está bloqueado (las reglas deny-all tienen prioridad)
-2. **Healthcheck**: El contenedor está marcado como "unhealthy" porque el healthcheck por defecto no incluye API key
+1. **✅ Firewall HTTP/HTTPS**: Arreglado - Reinicié docker-compose para que nginx reconozca el upstream
+2. **⚠️ Healthcheck**: El contenedor sigue marcado como "unhealthy" (no crítico, el servidor funciona)
 
-## Configuración para ChatGPT / Claude / OpenCode
+## Configuración para ChatGPT / Claude / OpenCode ✅
+
+### **🎉 SERVIDOR ACCESIBLE DESDE EXTERIOR**
 
 ### URL del MCP Server
 
-**⚠️ IMPORTANTE: El acceso externo está bloqueado por firewall**
+```
+🌐 URL Base: http://redmine-mcp-34-52-227-235.nip.io/mcp
 
-Actualmente el servidor solo es accesible desde dentro de la VM. Para usarlo desde ChatGPT u otros clientes externos, necesitás:
+🔑 API Key: 65487679e7363a0d06605c9fec28430f2fc43884
+```
 
-1. **Opción A - Arreglar firewall** (recomendado):
-   ```bash
-   # En GCP Console, aumentar prioridad de reglas allow-home-http/https
-   # Prioridad actual: 900 (demasiado alta, los deny-all tienen 1000)
-   # Cambiar a: 800 o menor
-   ```
+### Opción 1: Header (Recomendado para ChatGPT)
 
-2. **Opción B - Usar túnel SSH**:
-   ```bash
-   # Desde tu máquina local
-   ssh -L 8080:localhost:8000 redmine_mcp@34.52.227.235
-   # Luego usar: http://localhost:8080/mcp
-   ```
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "url": "http://redmine-mcp-34-52-227-235.nip.io/mcp",
+      "headers": {
+        "X-Redmine-API-Key": "65487679e7363a0d06605c9fec28430f2fc43884",
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream"
+      }
+    }
+  }
+}
+```
 
-### URL para Configurar
-
-Una vez solucionado el acceso:
+### Opción 2: Query Parameter (Para pruebas rápidas)
 
 ```
-# URL base del MCP Server
-http://redmine-mcp-34-52-227-235.nip.io/mcp
+http://redmine-mcp-34-52-227-235.nip.io/mcp?api_key=65487679e7363a0d06605c9fec28430f2fc43884
+```
 
-# Headers requeridos:
-X-Redmine-API-Key: 65487679e7363a0d06605c9fec28430f2fc43884
-Content-Type: application/json
-Accept: application/json, text/event-stream
+### Verificación Rápida
+
+```bash
+# Health check (sin auth)
+curl http://redmine-mcp-34-52-227-235.nip.io/health
+# Response: {"status":"ok","service":"redmine_mcp_tools","auth_mode":"legacy"}
 ```
 
 ### Ejemplo de Configuración en ChatGPT
