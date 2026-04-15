@@ -177,10 +177,10 @@ def _get_redmine_client() -> Redmine:
     if redmine is not None:
         return redmine
 
-    from .oauth_middleware import current_redmine_token
+    from .oauth_middleware import current_redmine_token, current_api_key
 
+    # Priority 1: OAuth token (Bearer)
     token = current_redmine_token.get()
-
     if token:
         # OAuth mode: per-request client with Bearer token (cannot be cached)
         requests_config = _build_requests_config()
@@ -191,7 +191,16 @@ def _get_redmine_client() -> Redmine:
             )
         return Redmine(REDMINE_URL, requests={"headers": headers})
 
-    # Legacy mode: reuse a cached singleton
+    # Priority 2: Dynamic API key from header/query param
+    api_key = current_api_key.get()
+    if api_key:
+        # Dynamic API key mode: per-request client with API key (cannot be cached)
+        requests_config = _build_requests_config()
+        if requests_config:
+            return Redmine(REDMINE_URL, key=api_key, requests=requests_config)
+        return Redmine(REDMINE_URL, key=api_key)
+
+    # Priority 3: Legacy mode: reuse a cached singleton
     if _legacy_client is None:
         _legacy_client = _build_legacy_client()
     return _legacy_client

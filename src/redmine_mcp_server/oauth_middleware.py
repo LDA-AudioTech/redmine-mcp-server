@@ -9,6 +9,11 @@ current_redmine_token: ContextVar[str | None] = ContextVar(
     "current_redmine_token", default=None
 )
 
+# Context variable for dynamic API keys (per-request)
+current_api_key: ContextVar[str | None] = ContextVar(
+    "current_api_key", default=None
+)
+
 REDMINE_URL = os.environ.get("REDMINE_URL", "").rstrip("/")
 REDMINE_MCP_BASE_URL = os.environ.get(
     "REDMINE_MCP_BASE_URL", "http://localhost:3040"
@@ -89,3 +94,30 @@ def get_current_token() -> str:
     if token is None:
         raise RuntimeError("No Redmine token in context — is OAuth middleware active?")
     return token
+
+
+class DynamicApiKeyMiddleware(BaseHTTPMiddleware):
+    """Middleware to extract X-Redmine-API-Key header and set it in context.
+    
+    This allows each request to use a different Redmine API key,
+    enabling multi-user support with different permissions.
+    """
+    
+    async def dispatch(self, request: Request, call_next):
+        # Extract API key from header
+        api_key = request.headers.get("X-Redmine-API-Key")
+        
+        # Also support query parameter for easier testing
+        if not api_key:
+            api_key = request.query_params.get("api_key")
+        
+        if api_key:
+            # Set in context for this request
+            api_key_var = current_api_key.set(api_key)
+            try:
+                return await call_next(request)
+            finally:
+                current_api_key.reset(api_key_var)
+        else:
+            # No API key provided, continue without setting context
+            return await call_next(request)

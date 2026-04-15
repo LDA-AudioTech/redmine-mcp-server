@@ -3,23 +3,27 @@ FROM python:3.13-slim AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    UV_CACHE_DIR=/opt/uv-cache
+    PYTHONUNBUFFERED=1
 
-# Install uv package manager
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        python3-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create and set working directory
 WORKDIR /app
 
 # Copy dependency files and source code for installation
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml ./
 COPY src/ ./src/
 COPY README.md ./
 
-# Install dependencies and the project in a virtual environment
-RUN uv venv /opt/venv && \
-    uv pip install . --python=/opt/venv/bin/python
+# Create virtual environment and install dependencies
+RUN python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install .
 
 # Production stage
 FROM python:3.13-slim AS runtime
