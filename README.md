@@ -44,6 +44,11 @@ curl -H "X-Redmine-API-Key: TU_API_KEY" \
 - **Fork**: https://github.com/jdsanchezlda/redmine-mcp-server
 - **Imagen**: `ghcr.io/jdsanchezlda/redmine-mcp-server:dynamic-api-key`
 
+## Documentación
+
+- **[REPLICAR.md](REPLICAR.md)** - Guía paso a paso para replicar este sistema en otra VM (25 min)
+- **[openspec/changes/archive/2026-04-15-redmine-mcp-dynamic-api-keys/](openspec/changes/archive/2026-04-15-redmine-mcp-dynamic-api-keys/)** - SDD completo (proposal, spec, design, tasks)
+
 ## Documentación Original
 
 Para documentación completa de herramientas MCP, ver [README original](https://github.com/jztan/redmine-mcp-server/blob/master/README.md).
