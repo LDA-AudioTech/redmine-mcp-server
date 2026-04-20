@@ -28,7 +28,7 @@ Permite múltiples usuarios concurrentes con sus propias credenciales de Redmine
 ### ChatGPT / Claude (URL simple)
 
 ```
-https://redmine-mcp-34-52-227-235.nip.io/mcp?api_key=65487679e7363a0d06605c9fec28430f2fc43884
+https://redmine-mcp-34-52-227-235.nip.io/mcp?api_key=TU_API_KEY
 ```
 
 ### Headers (alternativa)
@@ -77,7 +77,7 @@ Tiempo estimado: **25 minutos**
 
 ```bash
 # En tu máquina local o directamente en la VM
-git clone https://github.com/jdsanchezlda/redmine-mcp-server.git
+git clone https://github.com/LDA-AudioTech/redmine-mcp-server.git
 cd redmine-mcp-server
 git checkout develop
 ```
@@ -95,7 +95,7 @@ version: '3.8'
 
 services:
   redmine-mcp-server:
-    image: ghcr.io/jdsanchezlda/redmine-mcp-server:dynamic-api-key
+    image: ghcr.io/lda-audiotech/redmine-mcp-server:dynamic-api-key
     container_name: redmine-mcp-server
     restart: unless-stopped
     environment:
@@ -301,9 +301,9 @@ Los artefactos SDD completos están en:
 
 ## Repositorio e Imagen
 
-- **Fork**: https://github.com/jdsanchezlda/redmine-mcp-server
-- **Imagen Docker**: `ghcr.io/jdsanchezlda/redmine-mcp-server:dynamic-api-key`
-- **Package**: https://github.com/jdsanchezlda/redmine-mcp-server/pkgs/container/redmine-mcp-server
+- **Fork**: https://github.com/LDA-AudioTech/redmine-mcp-server
+- **Imagen Docker**: `ghcr.io/lda-audiotech/redmine-mcp-server:dynamic-api-key`
+- **Package**: `ghcr.io/lda-audiotech/redmine-mcp-server`
 
 ---
 
