@@ -107,7 +107,7 @@ class DynamicApiKeyMiddleware(BaseHTTPMiddleware):
         # Extract API key from header
         api_key = request.headers.get("X-Redmine-API-Key")
 
-        # Also support Bearer token as API key (ChatGPT sends Authorization: Bearer <key>)
+        # Bearer token as API key (ChatGPT sends Authorization: Bearer <key>)
         if not api_key:
             auth_header = request.headers.get("Authorization", "")
             if auth_header.startswith("Bearer "):
