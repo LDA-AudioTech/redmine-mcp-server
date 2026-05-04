@@ -1,8 +1,9 @@
 import os
+import json
 from contextvars import ContextVar
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 import httpx
 
 current_redmine_token: ContextVar[str | None] = ContextVar(
@@ -99,11 +100,35 @@ def get_current_token() -> str:
 class DynamicApiKeyMiddleware(BaseHTTPMiddleware):
     """Middleware to extract X-Redmine-API-Key header and set it in context.
 
-    This allows each request to use a different Redmine API key,
-    enabling multi-user support with different permissions.
+    Also intercepts MCP notifications the backend can't handle
+    (e.g. notifications/initialized) and returns 202 Accepted.
     """
 
+    # MCP notification methods that the FastMCP backend doesn't support.
+    # Codex is strict and aborts transport if these return errors.
+    MCP_NOTIFICATION_METHODS = frozenset([
+        "notifications/initialized",
+        "notifications/cancelled",
+        "notifications/progress",
+        "notifications/message",
+        "notifications/resources/list_changed",
+        "notifications/resources/updated",
+        "notifications/tools/list_changed",
+        "notifications/prompts/list_changed",
+    ])
+
     async def dispatch(self, request: Request, call_next):
+        # --- MCP Notification interception ---
+        if (request.method == "POST" and request.url.path == "/mcp"):
+            body = await request.body()
+            try:
+                payload = json.loads(body.decode("utf-8"))
+                method = payload.get("method", "")
+            except Exception:
+                method = ""
+            if method in self.MCP_NOTIFICATION_METHODS:
+                return Response(status_code=202)
+
         # Extract API key from header
         api_key = request.headers.get("X-Redmine-API-Key")
 
