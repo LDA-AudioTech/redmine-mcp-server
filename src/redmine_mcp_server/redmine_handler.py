@@ -2354,10 +2354,10 @@ async def get_redmine_attachment_download_url(
         # Download using existing approach - keeps original filename
         downloaded_path = attachment.download(savepath=str(attachments_dir))
 
-        # Get file info
-        original_filename = getattr(
-            attachment, "filename", f"attachment_{attachment_id}"
-        )
+        # Get file info (sanitize filename to prevent path traversal)
+        original_filename = Path(
+            getattr(attachment, "filename", f"attachment_{attachment_id}")
+        ).name
 
         # Create organized storage with UUID directory
         uuid_dir = attachments_dir / file_id

@@ -114,8 +114,7 @@ class DynamicApiKeyMiddleware(BaseHTTPMiddleware):
                 api_key = auth_header.removeprefix("Bearer ").strip()
 
         # Also support query parameter for easier testing
-        if not api_key:
-            api_key = request.query_params.get("api_key")
+        # REMOVED: query param auth violates security policy (keys in URLs get logged)
 
         if api_key:
             # Set in context for this request
