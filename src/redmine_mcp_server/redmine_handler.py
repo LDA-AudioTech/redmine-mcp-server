@@ -5142,6 +5142,157 @@ async def upload_file(
         )
 
 
+# ── LDA Custom: upload_attachment ──────────────────────────────────────────────
+# This tool is a custom addition by LDA-AudioTech. It does NOT exist in upstream.
+# When merging upstream changes, preserve this tool and the LDA marker above.
+# Unlike upload_file (which creates a Project File), upload_attachment returns
+# a token that the caller passes to create/update_redmine_issue via the
+# "uploads" field, enabling issue-level attachments.
+
+
+@mcp.tool()
+async def upload_attachment(
+    filename: str,
+    content_base64: Optional[str] = None,
+    source_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Upload a file to Redmine and return a token for attaching it to an issue.
+
+    Use this when you need to attach images or files to Redmine issues.
+    Returns an upload token that you pass to ``create_redmine_issue`` or
+    ``update_redmine_issue`` via the ``uploads`` field.
+
+    **Content sources — provide exactly ONE of:**
+
+    - ``source_url``: an HTTP(S) URL the server will download from.
+      Prefer this over content_base64 when a URL is available.
+    - ``content_base64``: raw file bytes encoded as base64.
+
+    **How to attach to an issue:**
+
+    1. Call this tool to get an upload token.
+    2. Pass the token in the ``uploads`` field of ``create_redmine_issue``
+       or ``update_redmine_issue``::
+
+           fields = {"uploads": [{"token": "<token>", "filename": "img.png", "content_type": "image/png"}]}
+
+    Args:
+        filename: Name for the file in Redmine (e.g., ``screenshot.png``).
+            Required. Used as the attachment filename.
+        content_base64: File content encoded as a base64 string. Mutually
+            exclusive with ``source_url``.
+        source_url: HTTP(S) URL to download the file from. Mutually exclusive
+            with ``content_base64``.
+
+    Returns:
+        Dictionary with ``token``, ``filename``, ``content_type``, and ``size``.
+        Pass the ``token`` in the ``uploads`` field of a subsequent
+        ``create_redmine_issue`` or ``update_redmine_issue`` call.
+
+    Size limit:
+        Uploads are capped at 50 MiB (same as ``upload_file``).
+
+    Examples:
+        >>> # Upload from base64 and attach to issue #42
+        >>> result = await upload_attachment(
+        ...     filename="screenshot.png",
+        ...     content_base64="iVBORw0KGgo...",
+        ... )
+        >>> # result = {"token": "7167f4d...", "filename": "screenshot.png", ...}
+        >>> await update_redmine_issue(
+        ...     issue_id=42,
+        ...     fields={"uploads": [{"token": result["token"],
+        ...                           "filename": "screenshot.png",
+        ...                           "content_type": "image/png"}]},
+        ... )
+
+        >>> # Upload from URL and attach to a new issue
+        >>> result = await upload_attachment(
+        ...     filename="report.pdf",
+        ...     source_url="https://example.com/report.pdf",
+        ... )
+        >>> await create_redmine_issue(
+        ...     project_id="web",
+        ...     subject="Q2 Report",
+        ...     fields={"uploads": [{"token": result["token"],
+        ...                          "filename": "report.pdf",
+        ...                          "content_type": "application/pdf"}]},
+        ... )
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    has_b64 = bool(content_base64)
+    has_url = bool(source_url)
+    if not has_b64 and not has_url:
+        return {"error": "Either content_base64 or source_url must be provided."}
+    if has_b64 and has_url:
+        return {
+            "error": ("Provide exactly ONE of content_base64 or source_url, not both.")
+        }
+
+    content_bytes: bytes
+    inferred_content_type: Optional[str] = None
+
+    if has_url:
+        content_bytes, inferred_filename, fetch_error = await _download_file_url(
+            source_url
+        )
+        if fetch_error is not None:
+            return fetch_error
+        if not filename or not filename.strip():
+            filename = inferred_filename or "upload"
+    else:
+        if not filename or not filename.strip():
+            return {"error": "filename is required when using content_base64."}
+        try:
+            content_bytes = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as e:
+            return {"error": f"content_base64 is not valid base64. Details: {e}"}
+        if len(content_bytes) == 0:
+            return {"error": "Decoded file content is empty."}
+        if len(content_bytes) > _FILE_UPLOAD_MAX_SIZE_BYTES:
+            size_mb = len(content_bytes) / (1024 * 1024)
+            limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+            return {
+                "error": (
+                    f"File too large: {size_mb:.1f} MiB exceeds the "
+                    f"{limit_mb:.0f} MiB upload limit."
+                )
+            }
+
+    safe_filename = _sanitize_filename(filename)
+    if not safe_filename:
+        return {"error": f"Invalid filename: {filename}"}
+
+    client = _get_redmine_client()
+    try:
+        upload_result = client.upload(io.BytesIO(content_bytes), filename=safe_filename)
+        token = upload_result["token"]
+
+        import mimetypes
+
+        content_type, _ = mimetypes.guess_type(safe_filename)
+        if content_type is None:
+            content_type = "application/octet-stream"
+
+        return {
+            "token": token,
+            "filename": safe_filename,
+            "content_type": content_type,
+            "size": len(content_bytes),
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"uploading attachment '{safe_filename}'",
+            {},
+        )
+
+
+# ── End LDA Custom: upload_attachment ────────────────────────────────────────
+
+
 @mcp.tool()
 async def delete_file(
     file_id: int,
