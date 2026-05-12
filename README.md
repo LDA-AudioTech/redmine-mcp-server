@@ -570,13 +570,31 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## LDA AudioTech Fork Customizations
 
-This fork adds **dynamic API key support** on top of the upstream server:
+This fork adds **dynamic API key support** and **issue attachment upload** on top of the upstream server:
 
 | Feature | Upstream | Fork LDA |
 |---------|----------|----------|
 | API key | Global (env var) | Dynamic per request via header |
 | Multi-user | No | Yes (each user sends their own key) |
 | Request isolation | N/A | `ContextVar` per request |
+| Issue attachments | `upload_file` (project files only) | `upload_attachment` (issue-level) |
+
+### LDA-Only Tool: `upload_attachment`
+
+Attaches files directly to Redmine issues. Not available in upstream.
+
+**Flow:**
+1. Call `upload_attachment` with `content_base64` or `source_url` + `filename`
+2. Get back a `token`
+3. Pass the token in `create_redmine_issue` or `update_redmine_issue` via the `uploads` field
+
+```python
+# Example: attach image to issue #42
+result = upload_attachment(filename="screenshot.png", content_base64="iVBOR...")
+update_redmine_issue(issue_id=42, fields={
+    "uploads": [{"token": result["token"], "filename": "screenshot.png", "content_type": "image/png"}]
+})
+```
 
 ### Dynamic API Key Authentication
 
