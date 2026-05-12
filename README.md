@@ -437,7 +437,7 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 70 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 69 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
 - **Project Management** (11 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
@@ -570,36 +570,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## LDA AudioTech Fork Customizations
 
-This fork adds **dynamic API key support** and **issue attachment upload** on top of the upstream server:
+This fork adds **dynamic API key support** on top of the upstream server:
 
 | Feature | Upstream | Fork LDA |
 |---------|----------|----------|
 | API key | Global (env var) | Dynamic per request via header |
 | Multi-user | No | Yes (each user sends their own key) |
 | Request isolation | N/A | `ContextVar` per request |
-| Issue attachments | `upload_file` (project files only) | `attach_file_to_issue` (issue-level) |
-
-### LDA-Only Tool: `attach_file_to_issue`
-
-Attaches files directly to Redmine issues. Not available in upstream.
-
-**Two modes:**
-
-- **With `issue_id`** — one-shot: uploads and attaches in a single call.
-- **Without `issue_id`** — upload only: returns a `token` for use with `create_redmine_issue` or `update_redmine_issue`.
-
-```python
-# One-shot: attach image to issue #42
-result = attach_file_to_issue(
-    issue_id=42, filename="screenshot.png", content_base64="iVBOR..."
-)
-
-# Upload only (for new issues): get token, then pass to create_redmine_issue
-result = attach_file_to_issue(filename="report.pdf", source_url="https://example.com/report.pdf")
-create_redmine_issue(project_id="web", subject="Q2 Report", fields={
-    "uploads": [{"token": result["token"], "filename": "report.pdf", "content_type": "application/pdf"}]
-})
-```
 
 ### Dynamic API Key Authentication
 
