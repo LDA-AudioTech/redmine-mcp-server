@@ -5142,102 +5142,35 @@ async def upload_file(
         )
 
 
-# ── LDA Custom: upload_attachment ──────────────────────────────────────────────
-# This tool is a custom addition by LDA-AudioTech. It does NOT exist in upstream.
-# When merging upstream changes, preserve this tool and the LDA marker above.
-# Unlike upload_file (which creates a Project File), upload_attachment returns
-# a token that the caller passes to create/update_redmine_issue via the
-# "uploads" field, enabling issue-level attachments.
+# ── LDA Custom: file attachment tools ─────────────────────────────────────────
+# This block contains LDA-AudioTech custom additions that do NOT exist in upstream.
+# When merging upstream changes, preserve this entire block and the LDA markers.
+#
+# Two components live here:
+#   1. _upload_file_internal() — private helper that uploads bytes to Redmine
+#      and returns a token + metadata. Not exposed as an MCP tool.
+#   2. attach_file_to_issue() — the single MCP tool for file attachments.
+#      - With issue_id: one-shot upload + attach + verify.
+#      - Without issue_id: upload only, returns a token for use with
+#        create_redmine_issue or update_redmine_issue.
 
 
-@mcp.tool()
-async def upload_attachment(
+async def _upload_file_internal(
     filename: str,
     content_base64: Optional[str] = None,
     source_url: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Upload a file to Redmine and return a token for attaching it to an issue.
-
-    Use this when you need to attach images or files to Redmine issues.
-    Returns an upload token that you pass to ``create_redmine_issue`` or
-    ``update_redmine_issue`` via the ``uploads`` field.
-
-    **Content sources — provide exactly ONE of:**
-
-    - ``source_url``: an HTTP(S) URL the server will download from.
-      Prefer this over content_base64 when a URL is available.
-    - ``content_base64``: raw file bytes encoded as base64.
-
-    **How to attach to an issue:**
-
-    1. Call this tool to get an upload token.
-    2. Pass the token in the ``uploads`` field of ``create_redmine_issue``
-       or ``update_redmine_issue``::
-
-           fields = {"uploads": [{"token": "<token>", "filename": "img.png", "content_type": "image/png"}]}
-
-    Args:
-        filename: Name for the file in Redmine (e.g., ``screenshot.png``).
-            Required. Used as the attachment filename.
-        content_base64: File content encoded as a base64 string. Mutually
-            exclusive with ``source_url``.
-        source_url: HTTP(S) URL to download the file from. Mutually exclusive
-            with ``content_base64``.
-
-    Returns:
-        Dictionary with ``token``, ``filename``, ``content_type``, and ``size``.
-        Pass the ``token`` in the ``uploads`` field of a subsequent
-        ``create_redmine_issue`` or ``update_redmine_issue`` call.
-
-    Size limit:
-        Uploads are capped at 50 MiB (same as ``upload_file``).
-
-    Examples:
-        >>> # Upload from base64 and attach to issue #42
-        >>> result = await upload_attachment(
-        ...     filename="screenshot.png",
-        ...     content_base64="iVBORw0KGgo...",
-        ... )
-        >>> # result = {"token": "7167f4d...", "filename": "screenshot.png", ...}
-        >>> await update_redmine_issue(
-        ...     issue_id=42,
-        ...     fields={"uploads": [{"token": result["token"],
-        ...                           "filename": "screenshot.png",
-        ...                           "content_type": "image/png"}]},
-        ... )
-
-        >>> # Upload from URL and attach to a new issue
-        >>> result = await upload_attachment(
-        ...     filename="report.pdf",
-        ...     source_url="https://example.com/report.pdf",
-        ... )
-        >>> await create_redmine_issue(
-        ...     project_id="web",
-        ...     subject="Q2 Report",
-        ...     fields={"uploads": [{"token": result["token"],
-        ...                          "filename": "report.pdf",
-        ...                          "content_type": "application/pdf"}]},
-        ... )
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
     has_b64 = bool(content_base64)
     has_url = bool(source_url)
     if not has_b64 and not has_url:
         return {"error": "Either content_base64 or source_url must be provided."}
     if has_b64 and has_url:
-        return {
-            "error": ("Provide exactly ONE of content_base64 or source_url, not both.")
-        }
+        return {"error": "Provide exactly ONE of content_base64 or source_url, not both."}
 
     content_bytes: bytes
-    inferred_content_type: Optional[str] = None
 
     if has_url:
-        content_bytes, inferred_filename, fetch_error = await _download_file_url(
-            source_url
-        )
+        content_bytes, inferred_filename, fetch_error = await _download_file_url(source_url)
         if fetch_error is not None:
             return fetch_error
         if not filename or not filename.strip():
@@ -5255,10 +5188,7 @@ async def upload_attachment(
             size_mb = len(content_bytes) / (1024 * 1024)
             limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
             return {
-                "error": (
-                    f"File too large: {size_mb:.1f} MiB exceeds the "
-                    f"{limit_mb:.0f} MiB upload limit."
-                )
+                "error": f"File too large: {size_mb:.1f} MiB exceeds the {limit_mb:.0f} MiB upload limit."
             }
 
     safe_filename = _sanitize_filename(filename)
@@ -5272,83 +5202,81 @@ async def upload_attachment(
 
         import mimetypes
 
-        content_type, _ = mimetypes.guess_type(safe_filename)
-        if content_type is None:
-            content_type = "application/octet-stream"
+        ct, _ = mimetypes.guess_type(safe_filename)
+        if ct is None:
+            ct = "application/octet-stream"
 
         return {
             "token": token,
             "filename": safe_filename,
-            "content_type": content_type,
+            "content_type": ct,
             "size": len(content_bytes),
         }
     except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"uploading attachment '{safe_filename}'",
-            {},
-        )
-
-
-# ── LDA Custom: attach_file_to_issue ─────────────────────────────────────────
-# One-shot tool: upload a file and attach it to an issue in a single call.
-# Wraps upload_attachment + update_redmine_issue(uploads=...) + verification.
-# Preserve this block during upstream merges.
+        return _handle_redmine_error(e, f"uploading attachment '{safe_filename}'", {})
 
 
 @mcp.tool()
 async def attach_file_to_issue(
-    issue_id: int,
     filename: str,
     content_base64: Optional[str] = None,
     source_url: Optional[str] = None,
+    issue_id: Optional[int] = None,
     content_type: Optional[str] = None,
     description: Optional[str] = None,
     notes: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Upload a file and attach it to a Redmine issue in one step.
+    """Upload a file to Redmine and optionally attach it to an issue.
 
-    This is a convenience tool that combines ``upload_attachment`` and
-    ``update_redmine_issue`` into a single call. It:
+    This is the single tool for file attachments. It works in two modes:
 
-    1. Uploads the file to Redmine and obtains an upload token.
-    2. Associates the file with the specified issue via the ``uploads`` field.
-    3. Optionally adds a comment (``notes``) to the issue.
-    4. Re-reads the issue and returns the new attachment's metadata.
+    **With ``issue_id``** — one-shot upload + attach + verify:
 
-    Prefer this over the manual two-step flow (``upload_attachment`` +
-    ``update_redmine_issue``) for a simpler, more reliable experience.
+    1. Uploads the file to Redmine.
+    2. Associates it with the specified issue.
+    3. Optionally adds a comment (``notes``).
+    4. Re-reads the issue and returns the new attachment's full metadata.
+
+    **Without ``issue_id``** — upload only:
+
+    Returns an upload ``token`` plus ``filename``, ``content_type``, and ``size``.
+    Pass the token in the ``uploads`` field of ``create_redmine_issue`` or
+    ``update_redmine_issue``::
+
+        fields = {"uploads": [{"token": "<token>", "filename": "img.png", "content_type": "image/png"}]}
 
     **Content sources — provide exactly ONE of:**
 
-    - ``content_base64``: raw file bytes encoded as base64. Use this for
-      images or files generated by the caller.
-    - ``source_url``: an HTTP(S) URL the server will download from.
+    - ``content_base64``: raw file bytes encoded as base64.
+    - ``source_url``: HTTP(S) URL the server will download from.
 
     .. note::
-       SVG files will be uploaded correctly, but Redmine displays them as
-       source code rather than rendered images. For visual content, prefer
-       PNG, JPEG, or WebP formats.
+       SVG files upload correctly, but Redmine renders them as source code.
+       For visual content prefer PNG, JPEG, or WebP.
 
     Args:
-        issue_id: The Redmine issue ID to attach the file to.
         filename: Name for the file (e.g., ``screenshot.png``).
         content_base64: File content as base64. Mutually exclusive with ``source_url``.
         source_url: HTTP(S) URL to download from. Mutually exclusive with ``content_base64``.
-        content_type: MIME type (e.g., ``image/png``). If omitted, inferred from filename.
+        issue_id: Redmine issue ID to attach the file to. If omitted, the file
+            is uploaded only and a token is returned for manual attachment.
+        content_type: MIME type (e.g., ``image/png``). Inferred from filename if omitted.
         description: Optional description for the attachment.
         notes: Optional comment to add to the issue when attaching the file.
+            Ignored when ``issue_id`` is not provided.
 
     Returns:
-        Dictionary with ``success``, ``issue_id``, and ``attachment`` metadata
-        (id, filename, content_type, size, content_url, description). If the
-        upload succeeds but the association fails, returns the ``token`` for
-        manual retry via ``update_redmine_issue``.
+        With ``issue_id``: dict with ``success``, ``issue_id``, and attachment
+        metadata (id, filename, content_type, size, content_url, description).
+        If upload succeeds but attach fails, returns the ``token`` for manual retry.
+
+        Without ``issue_id``: dict with ``token``, ``filename``, ``content_type``,
+        ``size``, and a ``hint`` explaining how to use the token.
     """
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
 
-    upload_result = await upload_attachment(
+    upload_result = await _upload_file_internal(
         filename=filename,
         content_base64=content_base64,
         source_url=source_url,
@@ -5360,6 +5288,18 @@ async def attach_file_to_issue(
     token = upload_result["token"]
     upload_filename = upload_result["filename"]
     upload_content_type = content_type or upload_result.get("content_type", "application/octet-stream")
+
+    if issue_id is None:
+        return {
+            "token": token,
+            "filename": upload_filename,
+            "content_type": upload_content_type,
+            "size": upload_result.get("size"),
+            "hint": (
+                "Pass the token in the 'uploads' field of create_redmine_issue "
+                "or update_redmine_issue to attach this file to an issue."
+            ),
+        }
 
     upload_entry: Dict[str, Any] = {
         "token": token,
@@ -5418,7 +5358,7 @@ async def attach_file_to_issue(
     }
 
 
-# ── End LDA Custom: attach_file_to_issue ─────────────────────────────────────
+# ── End LDA Custom: file attachment tools ─────────────────────────────────────
 
 
 @mcp.tool()
