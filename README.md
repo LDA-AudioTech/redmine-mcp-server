@@ -1,200 +1,627 @@
-# Redmine MCP Server - LDA AudioTech Fork
+# Redmine MCP Server
 
-Fork corporativo de [jztan/redmine-mcp-server](https://github.com/jztan/redmine-mcp-server) con soporte para **API keys dinámicas por request**.
+[![PyPI Version](https://img.shields.io/pypi/v/redmine-mcp-server.svg)](https://pypi.org/project/redmine-mcp-server/)
+[![License](https://img.shields.io/github/license/jztan/redmine-mcp-server.svg)](LICENSE)
+[![Python Version](https://img.shields.io/pypi/pyversions/redmine-mcp-server.svg)](https://pypi.org/project/redmine-mcp-server/)
+[![GitHub Issues](https://img.shields.io/github/issues/jztan/redmine-mcp-server.svg)](https://github.com/jztan/redmine-mcp-server/issues)
+[![CI](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml/badge.svg)](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml)
+[![Coverage](https://codecov.io/gh/jztan/redmine-mcp-server/branch/master/graph/badge.svg)](https://codecov.io/gh/jztan/redmine-mcp-server)
+[![Downloads](https://pepy.tech/badge/redmine-mcp-server)](https://pepy.tech/project/redmine-mcp-server)
 
-## Objetivo
+A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
 
-Permitir que múltiples usuarios compartan el mismo servidor MCP de Redmine usando sus propias credenciales, sin desplegar una instancia por usuario.
+**mcp-name: io.github.jztan/redmine-mcp-server**
 
-## Endpoint en producción
+## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md)
 
-```text
-https://redmine-mcp-34-52-227-235.nip.io/mcp?api_key=TU_API_KEY
-```
+## Features
 
-Health:
+- **69 MCP Tools**: Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts (CRM), and more
+- **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
+- **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
+- **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
+- **HTTP File Serving**: Secure attachment access via UUID-based URLs with automatic expiry
+- **Pagination Support**: Efficiently handle large result sets with configurable limits
+- **MCP Compliant**: Full Model Context Protocol support with FastMCP and HTTP transport
+- **Docker Ready**: Complete containerization support
 
-```text
-https://redmine-mcp-34-52-227-235.nip.io/health
-```
+## Quick Start
 
-## Diferencias con el proyecto original
+1. **Install the package**
+   ```bash
+   pip install redmine-mcp-server
+   ```
+2. **Create a `.env` file** with your Redmine credentials (see [Installation](#installation) for template)
+3. **Start the server**
+   ```bash
+   redmine-mcp-server
+   ```
+4. **Add the server to your MCP client** using one of the guides in [MCP Client Configuration](#mcp-client-configuration).
 
-| Tema | Original | Fork LDA |
-|------|----------|----------|
-| API key | Global | Dinámica por request |
-| Multiusuario | No | Sí |
-| Aislamiento por request | No aplica | `ContextVar` |
-| HTTPS en producción | Opcional | Sí |
+Once running, the server listens on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
 
-## Cómo se usa
+## Installation
 
-### ChatGPT / clientes que solo aceptan URL
+### Prerequisites
 
-```text
-https://redmine-mcp-34-52-227-235.nip.io/mcp?api_key=TU_API_KEY
-```
+- Python 3.10+ (for local installation)
+- Docker (alternative deployment, uses Python 3.13)
+- Access to a Redmine instance
 
-### Clientes que soportan headers
+### Install from PyPI (Recommended)
 
 ```bash
-curl -H "X-Redmine-API-Key: TU_API_KEY" \
-  https://redmine-mcp-34-52-227-235.nip.io/mcp
-```
+# Install the package
+pip install redmine-mcp-server
 
-## Arquitectura resumida
+# Create configuration file .env
+cat > .env << 'EOF'
+# Redmine connection (required)
+REDMINE_URL=https://your-redmine-server.com
 
-```text
-Cliente MCP
-  ↓
-Redmine MCP URL + api_key
-  ↓
-Caddy (TLS / reverse proxy)
-  ↓
+# Authentication - Use either API key (recommended) or username/password
+REDMINE_API_KEY=your_api_key
+# OR use username/password:
+# REDMINE_USERNAME=your_username
+# REDMINE_PASSWORD=your_password
+
+# Server configuration (optional, defaults shown)
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8000
+
+# Public URL for file serving (optional)
+PUBLIC_HOST=localhost
+PUBLIC_PORT=8000
+
+# File management (optional)
+ATTACHMENTS_DIR=./attachments
+AUTO_CLEANUP_ENABLED=true
+CLEANUP_INTERVAL_MINUTES=10
+ATTACHMENT_EXPIRES_MINUTES=60
+EOF
+
+# Edit .env with your actual Redmine settings
+nano .env  # or use your preferred editor
+
+# Run the server
 redmine-mcp-server
-  ↓
-Redmine
+# Or alternatively:
+python -m redmine_mcp_server.main
 ```
 
-### Decisión técnica clave
+The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
 
-Prioridad de autenticación:
+### Environment Variables Configuration
 
-1. OAuth token
-2. API key dinámica
-3. cliente legacy
+<details>
+<summary><strong>Environment Variables</strong></summary>
 
-## Despliegue / replicación
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `REDMINE_URL` | Yes | – | Base URL of your Redmine instance |
+| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy` or `oauth` (see [Authentication](#authentication)) |
+| `REDMINE_API_KEY` | Yes† | – | API key (legacy mode only) |
+| `REDMINE_USERNAME` | Yes† | – | Username for basic auth (legacy mode only) |
+| `REDMINE_PASSWORD` | Yes† | – | Password for basic auth (legacy mode only) |
+| `REDMINE_MCP_BASE_URL` | Yes‡ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth mode only) |
+| `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
+| `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
+| `PUBLIC_HOST` | No | `localhost` | Hostname used when generating download URLs |
+| `PUBLIC_PORT` | No | `8000` | Public port used for download URLs |
+| `ATTACHMENTS_DIR` | No | `./attachments` | Directory for downloaded attachments |
+| `AUTO_CLEANUP_ENABLED` | No | `true` | Toggle automatic cleanup of expired attachments |
+| `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task |
+| `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
+| `REDMINE_SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
+| `REDMINE_SSL_CERT` | No | – | Path to custom CA certificate file |
+| `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
+| `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
+| `REDMINE_AGILE_ENABLED` | No | `false` | Enable RedmineUP Agile plugin support: `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
+| `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `update_checklist_item`, `mark_checklist_done` (requires Checklists Pro plugin) |
+| `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `list_products`, `get_product`, `add_product`, `edit_product` |
+| `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `list_contacts`, `get_contact`, `edit_contact`, `create_contact`, `delete_contact`, `assign_contact_to_project`, `remove_contact_from_project` |
+| `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
+| `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
+| `REDMINE_ALLOW_PRIVATE_FETCH_URLS` | No | `false` | **Warning:** disables all SSRF protection for attachment fetching. Never set to `true` in production. |
 
-Tiempo estimado: **25 minutos**
+*† Required when `REDMINE_AUTH_MODE=legacy`. Either `REDMINE_API_KEY` or `REDMINE_USERNAME`+`REDMINE_PASSWORD` must be set. API key is recommended.*
+*‡ Required when `REDMINE_AUTH_MODE=oauth`.*
 
-### Requisitos
+When `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`, `create_redmine_issue` retries once on relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`) and fills values only from:
+- the Redmine custom field `default_value`, or
+- `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`
 
-- VM con Docker y Docker Compose
-- IP pública estática
-- dominio o subdominio (por ejemplo `nip.io`)
-- acceso root
-
-### Clonar
+Example:
 
 ```bash
-git clone https://github.com/LDA-AudioTech/redmine-mcp-server.git
-cd redmine-mcp-server
-git checkout develop
+REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true
+REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS='{"Required Field A":"Value A","Required Field B":"Value B"}'
 ```
 
-### Configuración mínima de producción
+</details>
 
-#### `docker-compose.yml`
+### SSL Certificate Configuration
 
-```yaml
-version: '3.8'
+Configure SSL certificate handling for Redmine servers with self-signed certificates or internal CA infrastructure.
 
-services:
-  redmine-mcp-server:
-    image: ghcr.io/lda-audiotech/redmine-mcp-server:dynamic-api-key
-    container_name: redmine-mcp-server
-    restart: unless-stopped
-    environment:
-      REDMINE_URL: https://tu-redmine.com
-      REDMINE_AUTH_MODE: legacy
-    networks:
-      - mcp-network
+<details>
+<summary><strong>Self-Signed Certificates</strong></summary>
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: redmine-mcp-caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-    networks:
-      - mcp-network
+If your Redmine server uses a self-signed certificate or internal CA:
 
-volumes:
-  caddy-data:
-
-networks:
-  mcp-network:
-    driver: bridge
+```bash
+# In .env file
+REDMINE_URL=https://redmine.company.com
+REDMINE_API_KEY=your_api_key
+REDMINE_SSL_CERT=/path/to/ca-certificate.crt
 ```
 
-#### `Caddyfile`
+Supported certificate formats: `.pem`, `.crt`, `.cer`
 
-```text
-tu-ip.nip.io {
-    reverse_proxy redmine-mcp-server:8000
+</details>
+
+<details>
+<summary><strong>Mutual TLS (Client Certificates)</strong></summary>
+
+For environments requiring client certificate authentication:
+
+```bash
+# In .env file
+REDMINE_URL=https://secure.redmine.com
+REDMINE_API_KEY=your_api_key
+REDMINE_SSL_CERT=/path/to/ca-bundle.pem
+REDMINE_SSL_CLIENT_CERT=/path/to/cert.pem,/path/to/key.pem
+```
+
+**Note**: Private keys must be unencrypted (Python requests library requirement).
+
+</details>
+
+<details>
+<summary><strong>Disable SSL Verification (Development Only)</strong></summary>
+
+⚠️ **WARNING**: Only use in development/testing environments!
+
+```bash
+# In .env file
+REDMINE_SSL_VERIFY=false
+```
+
+Disabling SSL verification makes your connection vulnerable to man-in-the-middle attacks.
+
+</details>
+
+For SSL troubleshooting, see the [Troubleshooting Guide](./docs/troubleshooting.md#ssl-certificate-errors).
+
+## Authentication
+
+The server supports two authentication modes, selected via `REDMINE_AUTH_MODE`.
+
+> **Backward compatibility**: `REDMINE_AUTH_MODE` defaults to `legacy`, so all existing deployments continue to work without any configuration changes. OAuth2 support is purely additive — nothing breaks if you never set the variable.
+
+### Legacy mode (default)
+
+Uses a single shared credential — either an API key or a username/password pair — configured once in `.env`. Every request to Redmine uses the same identity.
+
+```bash
+REDMINE_AUTH_MODE=legacy        # or omit entirely — this is the default
+REDMINE_URL=https://redmine.example.com
+REDMINE_API_KEY=your_api_key
+# OR:
+# REDMINE_USERNAME=your_username
+# REDMINE_PASSWORD=your_password
+```
+
+### OAuth2 mode
+
+> **Requires Redmine 6.1 or newer.** OAuth2 support (via the Doorkeeper gem) was introduced in Redmine 6.1.
+
+Each MCP request carries its own `Authorization: Bearer <token>` header. The server validates the token against `GET /users/current.json` on Redmine before forwarding it. This enables multi-user deployments where each user authenticates with their own Redmine account.
+
+```bash
+REDMINE_AUTH_MODE=oauth
+REDMINE_URL=https://redmine.example.com
+REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public URL of this server
+```
+
+In OAuth mode the server also exposes OAuth2 discovery and token management endpoints:
+
+| Endpoint | Standard | Purpose |
+|----------|----------|---------|
+| `/.well-known/oauth-protected-resource` | RFC 8707 | Tells clients where to find the authorization server |
+| `/.well-known/oauth-authorization-server` | RFC 8414 | Advertises Redmine's Doorkeeper OAuth endpoints |
+| `POST /revoke` | RFC 7009 | Revokes an OAuth2 token (proxies to Redmine's `/oauth/revoke`) |
+
+Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem for OAuth2 but does not serve the RFC 8414 discovery document itself. This server serves it on Redmine's behalf, pointing to Redmine's real `/oauth/authorize`, `/oauth/token`, and `/oauth/revoke` endpoints.
+
+**Prerequisites for OAuth mode:**
+- An OAuth application registered in Redmine admin → **Applications** with the callback URL of your client
+- A client that handles the authorization code flow, stores the resulting token per user, and sends it as `Authorization: Bearer <token>` on every MCP request
+- No Dynamic Client Registration (DCR) is required — register the application manually in Redmine admin
+
+For step-by-step setup instructions, see the [OAuth2 Setup Guide](./docs/oauth-setup.md).
+
+## MCP Client Configuration
+
+The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below.
+
+<details>
+<summary><strong>Visual Studio Code (Native MCP Support)</strong></summary>
+
+VS Code has built-in MCP support via GitHub Copilot (requires VS Code 1.102+).
+
+**Using CLI (Quickest):**
+```bash
+code --add-mcp '{"name":"redmine","type":"http","url":"http://127.0.0.1:8000/mcp"}'
+```
+
+**Using Command Palette:**
+1. Open Command Palette (`Cmd/Ctrl+Shift+P`)
+2. Run `MCP: Open User Configuration` (for global) or `MCP: Open Workspace Folder Configuration` (for project-specific)
+3. Add the configuration:
+   ```json
+   {
+     "servers": {
+       "redmine": {
+         "type": "http",
+         "url": "http://127.0.0.1:8000/mcp"
+       }
+     }
+   }
+   ```
+4. Save the file. VS Code will automatically load the MCP server.
+
+**Manual Configuration:**
+Create `.vscode/mcp.json` in your workspace (or `mcp.json` in your user profile directory):
+```json
+{
+  "servers": {
+    "redmine": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
 }
 ```
 
-### Firewall GCP
+</details>
 
-Abrir:
+<details>
+<summary><strong>Claude Code</strong></summary>
 
-- `80/tcp`
-- `443/tcp`
-- salida a internet para Let's Encrypt
-
-### Arranque
+Add to Claude Code using the CLI command:
 
 ```bash
-docker-compose up -d
-docker logs redmine-mcp-caddy --tail 20
+claude mcp add --transport http redmine http://127.0.0.1:8000/mcp
 ```
 
-### Verificación
+Or configure manually in your Claude Code settings file (`~/.claude.json`):
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>Claude Desktop (macOS & Windows)</strong></summary>
+
+Claude Desktop's config file supports stdio transport only. Use FastMCP's proxy via `uv` to bridge to this HTTP server.
+
+**Setup:**
+1. Open Claude Desktop
+2. Click the **Claude** menu (macOS menu bar / Windows title bar) > **Settings...**
+3. Click the **Developer** tab > **Edit Config**
+4. Add the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with", "fastmcp",
+        "fastmcp",
+        "run",
+        "http://127.0.0.1:8000/mcp"
+      ]
+    }
+  }
+}
+```
+
+5. Save the file, then **fully quit and restart** Claude Desktop
+6. Look for the tools icon in the input area to verify the connection
+
+**Config file locations:**
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+**Note:** The Redmine MCP server must be running before starting Claude Desktop.
+
+</details>
+
+<details>
+<summary><strong>Codex CLI</strong></summary>
+
+Add to Codex CLI using the command:
 
 ```bash
-curl https://tu-ip.nip.io/health
-curl "https://tu-ip.nip.io/mcp?api_key=TU_API_KEY"
+codex mcp add redmine -- npx -y mcp-client-http http://127.0.0.1:8000/mcp
+```
+
+Or configure manually in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.redmine]
+command = "npx"
+args = ["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]
+```
+
+**Note:** Codex CLI primarily supports stdio-based MCP servers. The above uses `mcp-client-http` as a bridge for HTTP transport.
+
+</details>
+
+<details>
+<summary><strong>Kiro</strong></summary>
+
+Kiro primarily supports stdio-based MCP servers. For HTTP servers, use an HTTP-to-stdio bridge:
+
+1. Create or edit `.kiro/settings/mcp.json` in your workspace:
+   ```json
+   {
+     "mcpServers": {
+       "redmine": {
+         "command": "npx",
+         "args": [
+           "-y",
+           "mcp-client-http",
+           "http://127.0.0.1:8000/mcp"
+         ],
+         "disabled": false
+       }
+     }
+   }
+   ```
+2. Save the file and restart Kiro. The Redmine tools will appear in the MCP panel.
+
+**Note:** Direct HTTP transport support in Kiro is limited. The above configuration uses `mcp-client-http` as a bridge to connect to HTTP MCP servers.
+
+</details>
+
+<details>
+<summary><strong>Generic MCP Clients</strong></summary>
+
+Most MCP clients use a standard configuration format. For HTTP servers:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+For clients that require a command-based approach with HTTP bridge:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "npx",
+      "args": ["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]
+    }
+  }
+}
+```
+
+</details>
+
+### Testing Your Setup
+
+```bash
+# Test connection by checking health endpoint
+curl http://localhost:8000/health
+```
+
+## Available Tools
+
+This MCP server provides 69 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+
+- **Project Management** (11 tools)
+  - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
+  - [`list_project_issue_custom_fields`](docs/tool-reference.md#list_project_issue_custom_fields) - List issue custom fields configured for a project
+  - [`list_redmine_versions`](docs/tool-reference.md#list_redmine_versions) - List versions/milestones for a project
+  - [`manage_redmine_version`](docs/tool-reference.md#manage_redmine_version) - Create, update, or delete a version/milestone
+  - [`list_project_members`](docs/tool-reference.md#list_project_members) - List members and roles of a project
+  - [`summarize_project_status`](docs/tool-reference.md#summarize_project_status) - Get comprehensive project status summary
+  - [`list_redmine_roles`](docs/tool-reference.md#list_redmine_roles) - List all roles defined in the Redmine instance (for discovering valid `role_ids`)
+  - [`get_project_modules`](docs/tool-reference.md#get_project_modules) - Retrieve the enabled modules for a project
+  - [`add_project_member`](docs/tool-reference.md#add_project_member) - Add a user or group as a member with roles
+  - [`update_project_member`](docs/tool-reference.md#update_project_member) - Update the roles of an existing membership
+  - [`remove_project_member`](docs/tool-reference.md#remove_project_member) - Remove a membership from a project
+
+- **Issue Operations** (19 tools)
+  - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information (supports journal pagination, watchers, relations, children)
+  - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, etc.)
+  - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
+  - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
+  - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
+  - [`copy_issue`](docs/tool-reference.md#copy_issue) - Duplicate an existing issue with optional field overrides
+  - [`list_issue_relations`](docs/tool-reference.md#list_issue_relations) - List all relations for an issue
+  - [`create_issue_relation`](docs/tool-reference.md#create_issue_relation) - Create a relation between two issues (blocks, duplicates, relates, etc.)
+  - [`delete_issue_relation`](docs/tool-reference.md#delete_issue_relation) - Delete an existing issue relation
+  - [`list_subtasks`](docs/tool-reference.md#list_subtasks) - List subtasks (child issues) of a given parent
+  - [`add_watcher`](docs/tool-reference.md#add_watcher) - Add a user to the watcher list of an issue
+  - [`remove_watcher`](docs/tool-reference.md#remove_watcher) - Remove a user from the watcher list
+  - [`edit_note`](docs/tool-reference.md#edit_note) - Edit an existing journal note's text and/or privacy
+  - [`get_private_notes`](docs/tool-reference.md#get_private_notes) - Retrieve private notes on an issue
+  - [`set_note_private`](docs/tool-reference.md#set_note_private) - Toggle the private/public state of a journal note
+  - [`list_issue_categories`](docs/tool-reference.md#list_issue_categories) - List issue categories for a project
+  - [`create_issue_category`](docs/tool-reference.md#create_issue_category) - Create a new issue category
+  - [`update_issue_category`](docs/tool-reference.md#update_issue_category) - Update an existing issue category
+  - [`delete_issue_category`](docs/tool-reference.md#delete_issue_category) - Delete an issue category (with optional reassignment)
+  - Note: `get_redmine_issue` can include `custom_fields` and `update_redmine_issue` can update custom fields by name (for example `{"size": "S"}`).
+
+- **Time Tracking** (6 tools)
+  - [`list_time_entries`](docs/tool-reference.md#list_time_entries) - List time entries with filtering by project, issue, user, and date range
+  - [`create_time_entry`](docs/tool-reference.md#create_time_entry) - Log time against projects or issues
+  - [`update_time_entry`](docs/tool-reference.md#update_time_entry) - Modify existing time entries
+  - [`list_time_entry_activities`](docs/tool-reference.md#list_time_entry_activities) - Discover available activity types for time entries
+  - [`log_time_for_user`](docs/tool-reference.md#log_time_for_user) - Create a time entry on behalf of another user (requires `log_time_for_other_users` permission)
+  - [`import_time_entries`](docs/tool-reference.md#import_time_entries) - Bulk import time entries via sequential API calls with per-entry error reporting
+
+- **Discovery / Enumeration** (6 tools): help LLMs find valid IDs before calling create/update tools
+  - [`list_redmine_trackers`](docs/tool-reference.md#list_redmine_trackers) - List all trackers (Bug, Feature, Support, etc.)
+  - [`list_redmine_issue_statuses`](docs/tool-reference.md#list_redmine_issue_statuses) - List all issue statuses with their `is_closed` flag
+  - [`list_redmine_issue_priorities`](docs/tool-reference.md#list_redmine_issue_priorities) - List all priority levels
+  - [`list_redmine_users`](docs/tool-reference.md#list_redmine_users) - Filter/list users (admin-only; supports name and group filters)
+  - [`get_current_user`](docs/tool-reference.md#get_current_user) - Get the authenticated user's profile (works for non-admins)
+  - [`list_redmine_queries`](docs/tool-reference.md#list_redmine_queries) - List saved custom queries (read-only)
+
+- **Search & Wiki** (7 tools)
+  - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)
+  - [`get_redmine_wiki_page`](docs/tool-reference.md#get_redmine_wiki_page) - Retrieve wiki page content
+  - [`create_redmine_wiki_page`](docs/tool-reference.md#create_redmine_wiki_page) - Create new wiki pages
+  - [`update_redmine_wiki_page`](docs/tool-reference.md#update_redmine_wiki_page) - Update existing wiki pages
+  - [`delete_redmine_wiki_page`](docs/tool-reference.md#delete_redmine_wiki_page) - Delete wiki pages
+  - [`list_wiki_pages`](docs/tool-reference.md#list_wiki_pages) - List all wiki pages in a project (titles, versions, parents)
+  - [`rename_wiki_page`](docs/tool-reference.md#rename_wiki_page) - Rename/move a wiki page (with optional redirect)
+
+- **File Operations** (5 tools)
+  - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
+  - [`upload_file`](docs/tool-reference.md#upload_file) - Upload a new file (base64 content) to a project, optionally tied to a version
+  - [`delete_file`](docs/tool-reference.md#delete_file) - Delete a file from a project
+  - [`get_redmine_attachment_download_url`](docs/tool-reference.md#get_redmine_attachment_download_url) - Get secure download URLs for attachments
+  - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files
+
+- **Checklists** (3 tools, requires `REDMINE_CHECKLISTS_ENABLED=true` + RedmineUP Checklists Pro plugin)
+  - [`get_checklist`](docs/tool-reference.md#get_checklist) - Retrieve all checklist items for an issue
+  - [`update_checklist_item`](docs/tool-reference.md#update_checklist_item) - Update a checklist item's text, done state, or position
+  - [`mark_checklist_done`](docs/tool-reference.md#mark_checklist_done) - Toggle the done/undone state of a checklist item
+
+- **Gantt** (1 tool, no plugin required)
+  - [`get_gantt_chart`](docs/tool-reference.md#get_gantt_chart) - Retrieve project timeline data: issues with dates, dependencies, and milestones
+
+- **Products** (4 tools, requires `REDMINE_PRODUCTS_ENABLED=true` + RedmineUP Products plugin)
+  - [`list_products`](docs/tool-reference.md#list_products) - List products (optionally filtered by project)
+  - [`get_product`](docs/tool-reference.md#get_product) - Retrieve a specific product by ID
+  - [`add_product`](docs/tool-reference.md#add_product) - Create a new product
+  - [`edit_product`](docs/tool-reference.md#edit_product) - Update product fields
+
+- **Contacts (CRM)** (7 tools, requires `REDMINE_CRM_ENABLED=true` + RedmineUP CRM plugin)
+  - [`list_contacts`](docs/tool-reference.md#list_contacts) - List contacts with optional filters (project, search, tags, assignee)
+  - [`get_contact`](docs/tool-reference.md#get_contact) - Retrieve a single contact by ID
+  - [`edit_contact`](docs/tool-reference.md#edit_contact) - Update contact fields
+  - [`create_contact`](docs/tool-reference.md#create_contact) - Create a new contact in a project
+  - [`delete_contact`](docs/tool-reference.md#delete_contact) - Delete a contact
+  - [`assign_contact_to_project`](docs/tool-reference.md#assign_contact_to_project) - Add a contact to an additional project
+  - [`remove_contact_from_project`](docs/tool-reference.md#remove_contact_from_project) - Remove a contact from a project (does not delete)
+
+
+## Docker Deployment
+
+### Quick Start with Docker
+
+```bash
+# Configure environment
+cp .env.example .env.docker
+# Edit .env.docker with your Redmine settings
+
+# Run with docker-compose
+docker-compose up --build
+
+# Or run directly
+docker build -t redmine-mcp-server .
+docker run -p 8000:8000 --env-file .env.docker redmine-mcp-server
+```
+
+### Production Deployment
+
+Use the automated deployment script:
+
+```bash
+chmod +x deploy.sh
+./deploy.sh
 ```
 
 ## Troubleshooting
 
-### Caddy no obtiene certificado
+If you run into any issues, checkout our [troubleshooting guide](./docs/troubleshooting.md).
 
-- revisar salida a internet
-- revisar DNS / resolución del dominio
+## Contributing
 
-### 502 Bad Gateway
+Contributions are welcome! Please see our [contributing guide](./docs/contributing.md) for details.
 
-- revisar `docker ps`
-- revisar logs de `redmine-mcp-server`
-- revisar red Docker
+## License
 
-### API key no funciona
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-- revisar logs del contenedor
-- probar con header `X-Redmine-API-Key`
+## LDA AudioTech Fork Customizations
 
-## Documentación técnica
+This fork adds **dynamic API key support** on top of the upstream server:
 
-### SDD archivado
+| Feature | Upstream | Fork LDA |
+|---------|----------|----------|
+| API key | Global (env var) | Dynamic per request via header |
+| Multi-user | No | Yes (each user sends their own key) |
+| Request isolation | N/A | `ContextVar` per request |
 
-Los artefactos formales del cambio viven en:
+### Dynamic API Key Authentication
 
-- `openspec/changes/archive/2026-04-15-redmine-mcp-dynamic-api-keys/`
+Send your Redmine API key via header:
 
-Contiene:
+```bash
+curl -H "X-Redmine-API-Key: YOUR_KEY" \
+  https://mcp-redmine.lda-audiotech.com/mcp
+```
 
-- `proposal.md`
-- `spec.md`
-- `design.md`
-- `tasks.md`
+Or via `Authorization: Bearer` (for ChatGPT and similar clients):
 
-### Documentación original del upstream
+```bash
+curl -H "Authorization: Bearer YOUR_KEY" \
+  https://mcp-redmine.lda-audiotech.com/mcp
+```
 
-- [README original](https://github.com/jztan/redmine-mcp-server/blob/master/README.md)
-- [Tool Reference](https://github.com/jztan/redmine-mcp-server/blob/master/docs/tool-reference.md)
+### Authentication Priority
 
-## Repositorio e imagen
+1. OAuth token (Bearer)
+2. Dynamic API key from `X-Redmine-API-Key` or `Authorization: Bearer` header
+3. Legacy env var client (`REDMINE_API_KEY`)
 
-- **Repo**: `https://github.com/LDA-AudioTech/redmine-mcp-server`
-- **Imagen**: `ghcr.io/lda-audiotech/redmine-mcp-server:dynamic-api-key`
+### Production Endpoint
 
-## Licencia
+```text
+https://mcp-redmine.lda-audiotech.com/mcp
+```
 
-MIT - ver [LICENSE](LICENSE)
+### Docker Image
+
+```text
+ghcr.io/lda-audiotech/redmine-mcp-server:dynamic-api-key
+```
+
+### Rollback
+
+```bash
+git tag pre-upgrade-v1.3.0-backup  # backup tag before v1.3.0 upgrade
+git checkout pre-upgrade-v1.3.0-backup
+```
+
+## Additional Resources
+
+- [Roadmap](roadmap.md) - Future development plans
+- [Blog: How I linked a legacy system to a modern AI agent with MCP](https://blog.jztan.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server) - The story behind this project
+- [Blog: Designing Reliable MCP Servers: 3 Hard Lessons in Agentic Architecture](https://blog.jztan.com/i-gave-my-ai-agent-full-api-access-it-was-a-mistak/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server) - Lessons learned building this server
+- [Blog: What It Actually Takes to Ship a Production MCP Server for Redmine](https://blog.jztan.com/what-it-actually-takes-to-ship-a-production-mcp-server-for-redmine/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server) - The full journey from prototype to production
