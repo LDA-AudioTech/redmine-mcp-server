@@ -96,6 +96,10 @@ def get_current_token() -> str:
     return token
 
 
+# ── LDA Custom ──
+# DynamicApiKeyMiddleware: per-request API key extraction for multi-user support.
+# Extends upstream Redmine MCP with X-Redmine-API-Key header and Bearer token auth.
+# Preserve this block when merging upstream.
 class DynamicApiKeyMiddleware(BaseHTTPMiddleware):
     """Middleware to extract X-Redmine-API-Key header and set it in context.
 

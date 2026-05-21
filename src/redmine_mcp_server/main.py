@@ -182,7 +182,9 @@ def register_oauth_routes(target_app):
 # Export the Starlette app for testing and external use
 app = mcp.http_app(stateless_http=True)
 
-# Register Dynamic API Key middleware (always enabled for multi-user support)
+# ── LDA Custom ──
+# Always register DynamicApiKeyMiddleware for multi-user support.
+# Preserve this block when merging upstream.
 app.add_middleware(DynamicApiKeyMiddleware)
 
 # Register OAuth2 middleware and endpoints only when auth mode is oauth
