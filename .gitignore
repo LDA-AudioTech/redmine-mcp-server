@@ -23,6 +23,9 @@ coverage.xml
 .mcpregistry_github_token
 .mcpregistry_registry_token
 
+# SDD/OpenSpec artifacts (live in parent repo mcp-platform, not in this public fork)
+openspec/
+
 # Local developer files (not part of the public repo)
 CLAUDE.md
 RELEASE_SOP.md
