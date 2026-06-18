@@ -1,7 +1,7 @@
 """Unit tests for Stage D time tracking tools.
 
 Covers:
-    - log_time_for_user
+    - manage_time_entry(action="create", user_id=...) (replaces log_time_for_user)
     - import_time_entries
 """
 
@@ -13,9 +13,9 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.tools.time_tracking import (  # noqa: E402
     import_time_entries,
-    log_time_for_user,
+    manage_time_entry,
 )
 
 
@@ -54,15 +54,16 @@ def _mock_time_entry(
 # ---------------------------------------------------------------------------
 
 
-class TestLogTimeForUser:
+class TestManageTimeEntryForUser:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_log_time_on_issue(self, mock_redmine):
         mock_redmine.time_entry.create.return_value = _mock_time_entry(
             entry_id=100, hours=2.5, user_id=7, user_name="Bob"
         )
 
-        result = await log_time_for_user(
+        result = await manage_time_entry(
+            action="create",
             user_id=7,
             hours=2.5,
             issue_id=123,
@@ -75,13 +76,14 @@ class TestLogTimeForUser:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_log_time_on_project(self, mock_redmine):
         mock_redmine.time_entry.create.return_value = _mock_time_entry(
             entry_id=101, hours=1.0, user_id=7
         )
 
-        result = await log_time_for_user(
+        result = await manage_time_entry(
+            action="create",
             user_id=7,
             hours=1.0,
             project_id="web",
@@ -100,56 +102,68 @@ class TestLogTimeForUser:
 
     @pytest.mark.asyncio
     async def test_missing_project_and_issue(self):
-        result = await log_time_for_user(user_id=7, hours=1.0)
+        result = await manage_time_entry(action="create", user_id=7, hours=1.0)
         assert "error" in result
         assert "project_id or issue_id" in result["error"]
 
     @pytest.mark.asyncio
     async def test_negative_hours(self):
-        result = await log_time_for_user(user_id=7, hours=-1.0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=7, hours=-1.0, issue_id=123
+        )
         assert "error" in result
         assert "positive" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_zero_hours(self):
-        result = await log_time_for_user(user_id=7, hours=0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=7, hours=0, issue_id=123
+        )
         assert "error" in result
 
     @pytest.mark.asyncio
     async def test_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await log_time_for_user(user_id=7, hours=1.0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=7, hours=1.0, issue_id=123
+        )
         assert "error" in result
         assert "read-only" in result["error"].lower()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_forbidden(self, mock_redmine):
         """User lacks log_time_for_other_users permission."""
         from redminelib.exceptions import ForbiddenError
 
         mock_redmine.time_entry.create.side_effect = ForbiddenError()
-        result = await log_time_for_user(user_id=7, hours=1.0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=7, hours=1.0, issue_id=123
+        )
         assert "error" in result
         assert "Access denied" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_target_user_not_project_member(self, mock_redmine):
         """Known Redmine quirk: target user not in project -> 422."""
         from redminelib.exceptions import ValidationError
 
         mock_redmine.time_entry.create.side_effect = ValidationError("User is invalid")
-        result = await log_time_for_user(user_id=999, hours=1.0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=999, hours=1.0, issue_id=123
+        )
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_issue_not_found(self, mock_redmine):
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.time_entry.create.side_effect = ResourceNotFoundError()
-        result = await log_time_for_user(user_id=7, hours=1.0, issue_id=9999)
+        result = await manage_time_entry(
+            action="create", user_id=7, hours=1.0, issue_id=9999
+        )
         assert "error" in result
 
 
@@ -160,7 +174,7 @@ class TestLogTimeForUser:
 
 class TestImportTimeEntries:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_bulk_import_all_succeed(self, mock_redmine):
         mock_redmine.time_entry.create.side_effect = [
             _mock_time_entry(entry_id=1, hours=2.0),
@@ -184,7 +198,7 @@ class TestImportTimeEntries:
         assert mock_redmine.time_entry.create.call_count == 3
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_bulk_import_partial_failure(self, mock_redmine):
         """One entry fails; by default we continue past errors."""
         from redminelib.exceptions import ValidationError
@@ -213,7 +227,7 @@ class TestImportTimeEntries:
         assert mock_redmine.time_entry.create.call_count == 3
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_stop_on_error(self, mock_redmine):
         """stop_on_error=True aborts at first failure."""
         from redminelib.exceptions import ValidationError
@@ -240,7 +254,7 @@ class TestImportTimeEntries:
         assert mock_redmine.time_entry.create.call_count == 2
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_accepts_json_string(self, mock_redmine):
         mock_redmine.time_entry.create.return_value = _mock_time_entry()
 
@@ -273,7 +287,7 @@ class TestImportTimeEntries:
         }
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_per_entry_missing_hours(self, mock_redmine):
         result = await import_time_entries(
             [
@@ -289,7 +303,7 @@ class TestImportTimeEntries:
         assert "hours" in result["errors"][0]["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_per_entry_negative_hours(self, mock_redmine):
         result = await import_time_entries(
             [
@@ -300,7 +314,7 @@ class TestImportTimeEntries:
         assert "positive" in result["errors"][0]["error"].lower()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_per_entry_missing_target(self, mock_redmine):
         result = await import_time_entries(
             [
@@ -311,7 +325,7 @@ class TestImportTimeEntries:
         assert "project_id or issue_id" in result["errors"][0]["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_non_dict_entry(self, mock_redmine):
         mock_redmine.time_entry.create.return_value = _mock_time_entry()
 
@@ -335,7 +349,7 @@ class TestImportTimeEntries:
         assert "read-only" in result["error"].lower()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_whitelist_filters_unknown_keys(self, mock_redmine):
         """Unknown keys in the entry are filtered out before create()."""
         mock_redmine.time_entry.create.return_value = _mock_time_entry()
@@ -358,7 +372,7 @@ class TestImportTimeEntries:
         assert kwargs["issue_id"] == 123
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_user_id_passthrough(self, mock_redmine):
         """import_time_entries supports user_id for logging on behalf of others."""
         mock_redmine.time_entry.create.return_value = _mock_time_entry()

@@ -7,6 +7,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Renamed `.env.docker` (previously tracked-but-gitignored placeholder, which trapped local edits as ongoing "modified" status and risked accidental commit of real credentials) to `.env.docker.example`, matching the `.env.example` convention. Users now copy `.env.docker.example` to `.env.docker`, which stays untracked. `deploy.sh` and the README quick-start were updated to copy from the new template name.
+
+### Fixed
+- **`search_redmine_issues`**: previously returned `null` for `subject`, `status`, `priority`, `project`, `assigned_to`, `author`, `created_on`, and `updated_on` regardless of what `fields` requested, because Redmine's `/search.json` endpoint only populates `id` and a description snippet. The tool now transparently hydrates each search hit via `/issues.json` (with `status_id="*"` so closed matches still hydrate), preserving search relevance order and falling back per-issue to the sparse search result for any id missing from the hydration response (e.g., deleted between calls). Hydration is skipped when `fields` only requests `id` and/or `description`, so the lightweight one-call path is still available. Hydration failures are logged and degrade gracefully to the previous sparse behavior rather than raising. Large id sets are batched at 100 ids per `/issues.json` call to stay within typical URL-length limits.
+
+### Security
+- Pin all GitHub Actions to immutable commit SHAs across all workflows to prevent supply chain attacks via tag hijacking (`actions/checkout`, `actions/setup-python`, `astral-sh/setup-uv`, `actions/github-script`, `codecov/codecov-action`). Version tags are preserved as inline comments.
+- Bump `fastmcp` from 3.2.0 to 3.2.4, patching three security issues: FileUpload now validates actual decoded base64 size instead of trusting client-reported size; proxy client no longer forwards inbound HTTP headers to unrelated remote servers; AuthKit auto-binds token audience to resource URL per RFC 8707, closing a token-reuse gap.
+- Bump `pytest` from 9.0.2 to 9.0.3, patching CVE-2025-71176 (insecure temporary directory usage).
+- Bump `python-multipart` from 0.0.26 to 0.0.27, patching CVE-2026-42561; added explicit lower-bound constraint to prevent silent regression to vulnerable versions.
+
+### CI
+- Bump `astral-sh/setup-uv` from v4 to v7 (node24, faster version resolution for `>=` specifiers)
+- Bump `actions/github-script` from v8 to v9
+- Bump `codecov/codecov-action` from v5 to v6
+
+### Added
+- **`get_redmine_attachment`**: unified attachment retrieval tool that works in both HTTP and stdio deployments
+  - Downloads the attachment to local disk and returns an HTTP URI (`uri_type: "http"`) when `PUBLIC_HOST` (or `SERVER_HOST`) resolves to an external hostname, or an absolute local `file_path` (`uri_type: "file"`) in stdio mode -- the model does not need to know which mode is active
+  - Streaming download with configurable byte-cap abort (`ATTACHMENT_MAX_DOWNLOAD_BYTES`, default 200 MB); partial files are deleted on abort
+  - Atomic temp-file rename pattern (`{filename}.tmp` -> final) consistent with existing file tools
+  - All stored files go through the existing `AttachmentFileManager` expiry and cleanup cycle
+  - `filename` in the response is wrapped in `<insecure-content>` boundary tags (attacker-controlled)
+  - Path traversal protection: filename sanitized to basename before writing to disk
+  - Host resolution follows the same fallback chain as the existing tool: `PUBLIC_HOST` -> `SERVER_HOST` -> `localhost`; port resolved via `PUBLIC_PORT` -> `SERVER_PORT` -> `8000`
+- **`ATTACHMENT_MAX_DOWNLOAD_BYTES`** environment variable (default `209715200`, 200 MB): cap applied to all `get_redmine_attachment` downloads regardless of content type
+- **`_get_int_env(var, default)`** helper in `_env.py` for numeric environment variables (all existing helpers are boolean `_is_*` functions)
+- **10 new unit tests** covering HTTP mode, stdio mode, `SERVER_HOST` fallback, absolute `file_path`, filename injection wrapping, byte-cap abort, metadata.json cleanup registration, path traversal sanitization, cap-abort leaving no partial files, and 404 error handling
+
+### Removed
+- **`get_redmine_attachment_download_url`**: removed in this major version. Use `get_redmine_attachment` instead, which works in both HTTP and stdio deployments.
+
+### Changed
+- Consolidated 35 MCP tools into 9 `manage_X` tools, reducing total tool count from 69 to 43:
+  - `add_project_member`, `update_project_member`, `remove_project_member` -> `manage_project_member(action=...)`
+  - `list_issue_categories`, `create_issue_category`, `update_issue_category`, `delete_issue_category` -> `manage_issue_category(action=...)`
+  - `list_issue_relations`, `create_issue_relation`, `delete_issue_relation` -> `manage_issue_relation(action=...)`
+  - `add_watcher`, `remove_watcher` -> `manage_issue_watcher(action=...)`
+  - `edit_note`, `set_note_private` -> `manage_issue_note(action=...)` (`get_private_notes` kept standalone)
+  - `create_time_entry`, `update_time_entry`, `log_time_for_user` -> `manage_time_entry(action=...)`
+  - `get_redmine_wiki_page`, `create_redmine_wiki_page`, `update_redmine_wiki_page`, `delete_redmine_wiki_page`, `list_wiki_pages`, `rename_wiki_page` -> `manage_redmine_wiki_page(action=...)`
+  - `list_products`, `get_product`, `add_product`, `edit_product` -> `manage_product(action=...)` (still gated by `REDMINE_PRODUCTS_ENABLED=true`)
+  - `list_contacts`, `get_contact`, `create_contact`, `edit_contact`, `delete_contact`, `assign_contact_to_project`, `remove_contact_from_project` -> `manage_contact(action=...)` (still gated by `REDMINE_CRM_ENABLED=true`)
+  - `mark_checklist_done` removed: use `update_checklist_item(is_done=True)` directly
+- `manage_time_entry(action="create", user_id=...)` replaces `log_time_for_user`
+- Verb normalization: `add_product` / `edit_product` map to `manage_product(action="create"|"update")`; `create_contact` / `edit_contact` map to `manage_contact(action="create"|"update")` to match the dominant CRUD pattern in the codebase
+- Response shape change: callers of `mark_checklist_done` previously received `{"is_done": bool}`; the equivalent `update_checklist_item` call returns `{"updated_fields": ["is_done"]}`
+- Read-only mode: write actions within `manage_X` tools are blocked; read actions (`list`, `get`) remain available
+- Refactored `redmine_handler.py` (6591 lines) into a `tools/` package and focused private modules. The 43 MCP tools now live in 11 per-resource files under `src/redmine_mcp_server/tools/`, with shared helpers in flat `_X.py` modules (`_client.py`, `_errors.py`, `_validation.py`, `_serialization.py`, `_env.py`, `_custom_fields.py`, `_ssrf.py`, `_cleanup.py`, `_http_routes.py`). Public MCP surface is unchanged (same 43 tools, parameters, return shapes, read-only behavior). **Breaking for any consumer importing from internal paths**: external code using `from redmine_mcp_server.redmine_handler import ...` must migrate to the new module paths (e.g., `from redmine_mcp_server.tools.projects import manage_project_member`, `from redmine_mcp_server._validation import _is_positive_int`). The `redmine_handler` module is removed in v2.0.0.
+- Codified the `manage_X(action=...)` pattern via a new `@action_dispatch` decorator in `_decorators.py`. The 9 `manage_X` tools (plus `manage_redmine_version`) now declare their action set as `{action: ActionMode.READ|WRITE}` and the decorator handles validation, read-only guards, and cleanup-task initialization. Future `manage_X` tools should use this decorator for consistency.
 
 ## [1.3.0] - 2026-05-06
 ### Added
